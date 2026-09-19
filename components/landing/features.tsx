@@ -10,7 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { ScrollTrigger, useGSAP } from "@/lib/gsap";
-import { revealOnScroll } from "@/lib/animations";
+import { revealOnScroll, useTiltGroup } from "@/lib/animations";
 import { cn } from "@/lib/utils";
 
 const FEATURES = [
@@ -51,6 +51,19 @@ const FEATURES = [
 
 export function Features() {
   const root = useRef<HTMLElement>(null);
+  // Each card tilts independently; the grid owns the instances.
+  /*
+   * A long perspective is deliberate. These cards are up to ~1000px wide,
+   * and perspective magnifies a layer in proportion to its distance from
+   * the card's centre — at 900px the icon at translateZ(60) grew enough to
+   * render outside the card. 2200 keeps real depth while holding every
+   * layer inside its own bounds.
+   */
+  const gridRef = useTiltGroup<HTMLDivElement>("[data-feature]", {
+    max: 6,
+    lift: 12,
+    perspective: 2200,
+  });
 
   useGSAP(
     () => {
@@ -95,6 +108,7 @@ export function Features() {
       </div>
 
       <div
+        ref={gridRef}
         data-feature-grid
         className="mt-14 grid gap-3 sm:grid-cols-3"
       >
@@ -103,25 +117,65 @@ export function Features() {
             key={f.title}
             data-feature
             className={cn(
-              "group glass relative overflow-hidden rounded-2xl p-6 transition-colors duration-500 hover:border-violet/30",
+              "group relative rounded-2xl [transform-style:preserve-3d]",
               f.span,
             )}
           >
-            {/* Hover glow follows the card, not the cursor — cheaper, and
-                it keeps the effect from feeling gimmicky. */}
+            {/*
+              The clipped surface is a SEPARATE back plate. Putting
+              `overflow-hidden` on the card itself would force
+              `transform-style: flat` per spec and silently collapse every
+              translateZ below — the depth would stop rendering.
+            */}
+            <div
+              aria-hidden
+              data-tilt-layer="-0.35"
+              data-tilt-z="-18"
+              className="glass absolute inset-0 overflow-hidden rounded-2xl"
+            >
+              {/* Decorative grid, deepest layer, drifts opposite the content. */}
+              <span className="grid-lines absolute inset-0 opacity-[0.18]" />
+              {/* Glow expands on hover via transform+opacity — never box-shadow. */}
+              <span
+                data-tilt-glow
+                className="absolute -inset-16 opacity-0"
+                style={{
+                  background:
+                    "radial-gradient(closest-side, oklch(0.64 0.191 281 / 30%), transparent 75%)",
+                }}
+              />
+            </div>
+
+            {/* Border reacts independently so it can brighten without the
+                surface having to repaint. */}
             <span
               aria-hidden
-              className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-              style={{
-                background:
-                  "radial-gradient(400px circle at 50% 0%, oklch(0.64 0.191 281 / 12%), transparent 70%)",
-              }}
+              data-tilt-border
+              className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 ring-1 ring-inset ring-violet/45"
             />
-            <f.icon className="size-5 text-violet" aria-hidden />
-            <h3 className="mt-4 font-medium tracking-tight">{f.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {f.body}
-            </p>
+
+            <div className="relative p-6 [transform-style:preserve-3d]">
+              <f.icon
+                data-tilt-layer="1.6"
+                data-tilt-z="60"
+                className="size-5 text-violet"
+                aria-hidden
+              />
+              <h3
+                data-tilt-layer="1"
+                data-tilt-z="40"
+                className="mt-4 font-medium tracking-tight"
+              >
+                {f.title}
+              </h3>
+              <p
+                data-tilt-layer="0.4"
+                data-tilt-z="20"
+                className="mt-2 text-sm leading-relaxed text-muted-foreground"
+              >
+                {f.body}
+              </p>
+            </div>
           </article>
         ))}
       </div>

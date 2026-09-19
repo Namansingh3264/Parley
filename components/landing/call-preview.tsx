@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Mic, MicOff, MonitorUp, MessageSquare, PhoneOff, Video } from "lucide-react";
-import { gsap, useGSAP } from "@/lib/gsap";
-import { prefersReducedMotion } from "@/lib/animations";
+import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap";
+import { createTilt, prefersReducedMotion } from "@/lib/animations";
 import { cn } from "@/lib/utils";
 
 const PEOPLE = [
@@ -22,6 +22,15 @@ const PEOPLE = [
  */
 export function CallPreview() {
   const root = useRef<HTMLDivElement>(null);
+  const tiltRef = useRef<HTMLDivElement>(null);
+
+  // Cursor tilt on top of the ambient drift. The drift animates rotateX/Y
+  // on the same element, so tilt is attached to a wrapper instead of
+  // fighting it for the transform.
+  useEffect(() => {
+    if (!tiltRef.current) return;
+    return createTilt(tiltRef.current, { max: 5, lift: 18, scale: 1.005, ease: 0.65 });
+  }, []);
 
   useGSAP(
     () => {
@@ -41,26 +50,109 @@ export function CallPreview() {
           .to(bars, { scaleY: 0.25, duration: 0.3 }, i * 2.2 + 1.8);
       });
 
-      // Slow ambient tilt so the mock never feels like a static image.
+      /*
+       * Ambient drift is rotateX only. A continuous rotateY makes one column
+       * perspective-wider than the other, which reads as a lopsided layout
+       * rather than as depth. Left/right rotation is left to the cursor,
+       * where the user causes it and so expects it.
+       */
       gsap.to(root.current, {
-        rotateX: 1.6,
-        rotateY: -1.6,
+        rotateX: 1.4,
         duration: 7,
         ease: "sine.inOut",
         yoyo: true,
         repeat: -1,
       });
+
+      /*
+       * Independent tile depth. Each tile sits on its own Z plane and drifts
+       * slightly out of phase, so the grid reads as a stack of physical
+       * panes inside a glass frame rather than a flat screenshot.
+       */
+      /*
+       * Depth is intentionally small. Pushed further, perspective magnifies
+       * the near tiles until they visibly break out of the glass frame —
+       * which reads as a rendering bug, not as depth. The frame has to keep
+       * containing them.
+       */
+      tiles.forEach((tile, i) => {
+        gsap.set(tile, { z: [10, 5, 3, 7][i] ?? 5, transformStyle: "preserve-3d" });
+        gsap.to(tile, {
+          z: `+=${2.5 + i * 0.8}`,
+          duration: 5 + i * 0.8,
+          ease: "sine.inOut",
+          yoyo: true,
+          repeat: -1,
+          delay: i * 0.35,
+        });
+      });
+
+      // Animated frame border: a slow sweep around the glass edge.
+      gsap.to("[data-frame-sweep]", {
+        backgroundPosition: "200% 50%",
+        duration: 6,
+        ease: "none",
+        repeat: -1,
+      });
+
+      /*
+       * Scroll camera. The whole object turns and recedes as the page moves
+       * past it — the mock passes through 3D space rather than scrolling
+       * flat up the screen.
+       */
+      gsap.fromTo(
+        root.current,
+        { rotateX: 6, z: -70, yPercent: 3 },
+        {
+          rotateX: -3,
+          z: 18,
+          yPercent: -3,
+          ease: "none",
+          scrollTrigger: {
+            trigger: root.current,
+            start: "top 92%",
+            end: "bottom 30%",
+            scrub: 1,
+          },
+        },
+      );
+      ScrollTrigger.refresh();
     },
     { scope: root },
   );
 
   return (
-    <div
-      ref={root}
-      aria-hidden
-      className="glass-strong rounded-3xl p-2.5 shadow-[0_40px_120px_-40px_rgba(0,0,0,0.9)]"
-      style={{ perspective: 1200 }}
-    >
+    <div ref={tiltRef} className="rounded-3xl">
+      <div
+        ref={root}
+        aria-hidden
+        className="glass-strong relative rounded-3xl p-4 shadow-[0_40px_120px_-40px_rgba(0,0,0,0.9)]"
+        style={{ perspective: 1200, transformStyle: "preserve-3d" }}
+      >
+        {/* Animated glass frame: a gradient that sweeps around the border.
+            Masked to the edge so it never tints the panel itself. */}
+        <span
+          data-frame-sweep
+          className="pointer-events-none absolute -inset-px rounded-3xl opacity-60"
+          style={{
+            background:
+              "linear-gradient(100deg, transparent 20%, oklch(0.78 0.14 281 / 55%) 45%, oklch(0.82 0.13 196 / 55%) 55%, transparent 80%)",
+            backgroundSize: "200% 100%",
+            padding: 1,
+            WebkitMask:
+              "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+          }}
+        />
+        {/* Floating shadow/glow, sitting behind the object in Z. */}
+        <span
+          className="pointer-events-none absolute inset-x-8 -bottom-8 h-16 rounded-[50%] blur-2xl"
+          style={{
+            background: "oklch(0.64 0.191 281 / 30%)",
+            transform: "translateZ(-90px)",
+          }}
+        />
       <div className="flex items-center gap-2 px-2 py-2">
         <span className="size-2 rounded-full bg-live" />
         <span className="font-mono text-[11px] text-muted-foreground">
@@ -71,7 +163,7 @@ export function CallPreview() {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="relative grid grid-cols-2 gap-2.5" style={{ transformStyle: "preserve-3d" }}>
         {PEOPLE.map((p) => (
           <div
             key={p.name}
@@ -129,6 +221,7 @@ export function CallPreview() {
         <span className={cn("flex size-8 items-center justify-center rounded-full bg-danger/90 text-white")}>
           <PhoneOff className="size-3.5" />
         </span>
+        </div>
       </div>
     </div>
   );

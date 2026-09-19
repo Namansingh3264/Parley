@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { generateRoomId } from "@/lib/room";
+import { CreateTransition } from "@/components/room/create-transition";
 import { useMagnetic } from "@/lib/animations";
 import { cn } from "@/lib/utils";
 
@@ -22,19 +23,46 @@ interface CreateRoomButtonProps {
 export function CreateRoomButton({ size = "lg", className }: CreateRoomButtonProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  // Held in state so the transition can show the ID the user is about to join.
+  const [creating, setCreating] = useState<{ id: string; origin: { x: number; y: number } } | null>(null);
+  /** Minted early so the route can be prefetched before the click. */
+  const pendingId = useRef<string | null>(null);
   const magnetRef = useMagnetic<HTMLButtonElement>(size === "lg" ? 0.3 : 0.15);
   const glowRef = useRef<HTMLSpanElement>(null);
 
-  const create = () => {
+  /**
+   * The room ID is minted on first hover, not on click, so the route can be
+   * prefetched while the user is still deciding. `/r/[roomId]` is a dynamic
+   * route — without this, its RSC payload is not requested until navigation,
+   * and that network round trip lands *after* the transition finishes.
+   */
+  const warm = () => {
+    if (pendingId.current) return;
+    const id = generateRoomId();
+    pendingId.current = id;
+    router.prefetch(`/r/${id}`);
+  };
+
+  const create = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (pending) return;
     setPending(true);
-    router.push(`/r/${generateRoomId()}`);
+    warm();
+    const id = pendingId.current ?? generateRoomId();
+    const r = e.currentTarget.getBoundingClientRect();
+    setCreating({
+      id,
+      origin: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+    });
   };
 
   return (
-    <Button
+    <>
+      <Button
       ref={magnetRef}
       type="button"
       onClick={create}
+      onPointerEnter={warm}
+      onFocus={warm}
       disabled={pending}
       size={size === "lg" ? "lg" : "sm"}
       className={cn(
@@ -48,17 +76,18 @@ export function CreateRoomButton({ size = "lg", className }: CreateRoomButtonPro
     >
       <span
         ref={glowRef}
+        data-magnet-glow
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        className="pointer-events-none absolute -inset-4 opacity-0"
         style={{
           background:
             "radial-gradient(circle at 50% 120%, oklch(0.95 0.05 281 / 45%), transparent 60%)",
         }}
       />
       {pending ? (
-        <Loader2 className={cn("animate-spin", size === "lg" ? "size-4" : "size-3.5")} aria-hidden />
+        <Loader2 data-magnet-icon className={cn("animate-spin", size === "lg" ? "size-4" : "size-3.5")} aria-hidden />
       ) : (
-        <Video className={cn(size === "lg" ? "size-4" : "size-3.5")} aria-hidden />
+        <Video data-magnet-icon className={cn(size === "lg" ? "size-4" : "size-3.5")} aria-hidden />
       )}
       <span className="relative">{pending ? "Starting room…" : "Create room"}</span>
       {size === "lg" && !pending && (
@@ -67,6 +96,15 @@ export function CreateRoomButton({ size = "lg", className }: CreateRoomButtonPro
           aria-hidden
         />
       )}
-    </Button>
+      </Button>
+
+      {creating && (
+        <CreateTransition
+          roomId={creating.id}
+          origin={creating.origin}
+          onNavigate={() => router.push(`/r/${creating.id}`)}
+        />
+      )}
+    </>
   );
 }
