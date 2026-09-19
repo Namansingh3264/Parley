@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently -n web,party -c magenta,cyan \"npm:dev:web\" \"npm:dev:party\"",
     "build": "next build --turbopack",
-    "start": "next start -p 3100",
+    "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "shot": "node scripts/shot.mjs",
